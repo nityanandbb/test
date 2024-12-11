@@ -46,20 +46,20 @@ jobs:
     - name: Install Lighthouse CLI
       run: npm install
 
-    # Step 4: Validate Inputs and Export as JSON
-    - name: Validate and Export Inputs
+    # Step 4: Validate Inputs and Prepare Environment
+    - name: Validate Inputs
       run: |
         echo -e "🟢 Validating inputs..."
-
+        
         # Validate and sanitize URLs
         if [ -z "${{ github.event.inputs.urls }}" ]; then
           echo -e "❌ No URLs provided. Please provide valid URLs to proceed."
           exit 1
         fi
 
-        # Split URLs and sanitize
-        urls=$(echo "${{ github.event.inputs.urls }}" | tr ',' '\n' | sed 's/^ *//g; s/ *$//g; s/^\"//g; s/\"$//g')
-
+        # Split URLs and sanitize by trimming spaces and quotes
+        urls=$(echo "${{ github.event.inputs.urls }}" | tr ',' '\n' | sed 's/^ *//g; s/ *$//g; s/^["\(]*//g; s/["\)]*$//g')
+        
         # Validate URL format
         valid_urls=()
         for url in $urls; do
@@ -74,30 +74,32 @@ jobs:
 
         echo -e "✅ All URLs validated successfully."
 
-        # Export validated inputs as JSON
-        echo "{
-          \"projectName\": \"${{ github.event.inputs.projectName }}\",
-          \"client\": \"${{ github.event.inputs.client }}\",
-          \"projectManager\": \"${{ github.event.inputs.projectManager }}\",
-          \"qaManager\": \"${{ github.event.inputs.qaManager }}\",
-          \"expectedLoadTime\": \"${{ github.event.inputs.expectedLoadTime }}\",
-          \"urls\": [\"$(IFS=,; echo "${valid_urls[*]}")\"]
-        }" > github_inputs.json
-
-        echo "GITHUB_INPUTS=$(cat github_inputs.json)" >> $GITHUB_ENV
+        # Export environment variables for use in scripts
+        echo "PROJECT_NAME=${{ github.event.inputs.projectName }}" >> $GITHUB_ENV
+        echo "CLIENT=${{ github.event.inputs.client }}" >> $GITHUB_ENV
+        echo "PROJECT_MANAGER=${{ github.event.inputs.projectManager }}" >> $GITHUB_ENV
+        echo "QA_MANAGER=${{ github.event.inputs.qaManager }}" >> $GITHUB_ENV
+        echo "EXPECTED_LOAD_TIME=${{ github.event.inputs.expectedLoadTime }}" >> $GITHUB_ENV
+        
+        # Export URLs as a list
+        echo "TESTFILES_LIST=${valid_urls[*]}" >> $GITHUB_ENV
 
     # Step 5: Start Lighthouse Execution
     - name: Execute Lighthouse Tests
       run: |
         echo -e "🚀 Starting Lighthouse tests..."
 
-        # Log inputs
-        echo -e "🔍 Debug: Inputs passed to the script:"
-        cat github_inputs.json
-
-        # Run Node.js script with inputs
+        # Convert test URLs list into an array
+        IFS=' ' read -r -a testList <<< "$TESTFILES_LIST"
+        
+        # Log each URL being processed
+        echo -e "🔍 URLs to be tested:"
+        for test in "${testList[@]}"; do
+          echo -e "  - $test"
+        done
+        
+        # Pass URLs to the Node.js script
         node executeGithub.js
-
         echo -e "✅ Lighthouse tests completed."
 
     # Step 6: Wait for Report Generation (Adding Delay)
